@@ -122,3 +122,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Yu-Gi-Oh! YDK/DB files
+cardinfo.php.json
+*.ydk
