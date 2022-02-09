@@ -1,6 +1,9 @@
 import json
+import sys
 import requests
+import pathlib
 from typing import List
+from os.path import exists
 
 
 class CardImage:
@@ -23,22 +26,22 @@ class CardSet:
     set_price: str
 
 class Card:
-    id: int
+    id: int # Card UUID
     name: str
-    type: str
-    desc: str
+    type: str # Card Super Type. Monster, Spell, Trap.
+    desc: str # Card Text, including Pendulum Text
     atk: int
-    card_def: int
+    card_def: int # We can't use def as a variable name, so card_def
     level: int
-    race: str
+    race: str # Monster Type, or Spell/Trap Type (Normal, Continuous, Quick-Play, Counter, etc.)
     attribute: str
-    archetype: str
-    scale: int
-    linkval: int
-    linkmarkers: List[str]
-    card_sets: List[CardSet]
-    card_images: List[CardImage]
-    card_prices: List[CardPrice]
+    archetype: str # Sometimes this information is wrong or missing
+    scale: int # Pendulum Scale
+    linkval: int # Link rating, such as LINK-2, LINK-4, etc.
+    linkmarkers: List[str] # Link Arrow Directions
+    card_sets: List[CardSet] # Set(s) that the card was printed in
+    card_images: List[CardImage] # Card Image URLs
+    card_prices: List[CardPrice] # Current average prices as of the datetime the file was saved
 
     def __init__(self, json):
         vars(self).update(json)
@@ -51,6 +54,50 @@ starters: List[str] = []
 targets: List[str] = []
 longestNameLength: int = 0
 routes: List[tuple[Card, Card, Card]] = []
+
+# Grab the entirety of YGOProDeck's Card Database in JSON and save to cardinfo.php.json in current directory
+def downloadYGOProDeckCardsJSON():
+    pathlib.Path('cardinfo.php.json').write_bytes(requests.get('https://db.ygoprodeck.com/api/v7/cardinfo.php').content)
+
+# Initialize Local cardDB JSON
+def initializeLocalCardDB():
+    global cardDB
+    selection = None
+
+    if not exists('cardinfo.php.json'):
+        while selection != "Y":
+            print("cardinfo.php.json missing from current directory/nDo you want to download from YGOProDeck? (Y/N): ", end ="")
+            selection = input().upper()
+            if selection == "Y":
+                downloadYGOProDeckCardsJSON()
+            elif selection == "N":
+                print("cardinfo.php.json is required to continue, exiting...")
+                sys.exit(0)
+
+    # Open cardDB
+    try:
+        cardDB = open('cardinfo.php.json')
+        cardDB = json.load(cardDB)
+    except Exception as e:
+        sys.exit(e)
+
+# Init deck
+def initializeDeck():
+    try:
+        deckFile = open('deck.ydk')
+    except Exception as e:
+        sys.exit(e)
+    
+    deckFile = deckFile.readlines()
+    for line in deckFile:
+        if '#EXTRA' in line.upper():
+            break
+        elif line.startswith('#'):
+            continue
+        else:
+            card = findCard(int(line), cardDB)
+            if card is not None and not checkCardIsInDeck(card):
+                deck.append(card)
 
 # Request card JSON from YGOProDeck
 def findCardOnline(id: int):
@@ -67,31 +114,22 @@ def findCard(id, cardDB):
                 cardDB['data'][i]['card_def'] = cardDB['data'][i]['def']
                 return Card(cardDB['data'][i])
 
+# Verify the card is not already in the 'deck'
+# The 'deck' in our use case is just the card pool available,
+# so we don't want duplicates because that would result in the
+# same card being used as a starter/bridge/target multiple times
 def checkCardIsInDeck(target: Card):
     for card in deck:
         if target.id == card.id:
             return True
     return False
 
-# Init deck
-def initializeDeck():
-    deckFile = open('deck.ydk')
-    deckFile = deckFile.readlines()
-    for line in deckFile:
-        if '#EXTRA' in line.upper():
-            break
-        elif line.startswith('#'):
-            continue
-        else:
-            card = findCard(int(line), cardDB)
-            if card is not None and not checkCardIsInDeck(card):
-                deck.append(card)
-
 # Verify two cards are legel for Small World requirement
+# "exactly 1 of the same Type, Attribute, Level, ATK or DEF"
 def smallWorldLegal(cardA, cardB):
     similarities: int = 0
 
-    if cardA.race == cardB.race:
+    if cardA.race == cardB.race: # Race is the Monster Type
         similarities += 1
     if cardA.attribute == cardB.attribute:
         similarities += 1
@@ -145,16 +183,13 @@ def findRoutes():
                 for target in targets:
                     if target.id != starter.id:
                         routes.append((starter.name, bridge.name, target.name))
-                        # print(starter.name + "\t>\t" + bridge.name + "\t>\t" + target.name)
 
 def findTargets():
     for route in routes:
         if route[2] not in targets:
             targets.append(route[2])
 
-# Open cardDB
-cardDB = open('cardinfo.php.json')
-cardDB = json.load(cardDB)
+initializeLocalCardDB()
 initializeDeck()
 findLongestCardNameInDeck()
 formatCardNamesInDeck()
@@ -163,32 +198,47 @@ findRoutes()
 findTargets()
 
 # Begin user prompts
-print("Find routes by:\nS - Starters\nT - Targets")
-print("How do you want to find routes? (S/T): ", end ="")
-selection = input().upper()
+selection = None
 
-if selection == "S":
-    print("--- Possible starters ---")
-    for i in range(len(starters)):
-        print(str(i) + " - " + starters[i])
+while selection != "S" or selection != "T":
+    print("Find routes by Starters or Targets? (S/T): ", end ="")
+    selection = input().upper()
 
-    print("Select starter: ", end ="")
-    selection = int(input())
+    if selection == "S":
+        print("--- Possible starters ---")
+        for i in range(len(starters)):
+            print(str(i) + " - " + starters[i])
 
-    for route in routes:
-        if starters[selection] == route[0]:
-            print(route[0] + "\t>\t" + route[1] + "\t>\t" + route[2])
+        selection = -1
+        while selection > i or selection < 0:
+            print("Select starter: ", end ="")
+            selection = int(input())
 
-elif selection == "T":
-    print("--- Possible targets ---")
-    for i in range(len(targets)):
-        print(str(i) + " - " + targets[i])
+        print("Your selection: " + targets[selection])
+        
+        for route in routes:
+            if starters[selection] == route[0]:
+                print(route[0] + "\t>\t" + route[1] + "\t>\t" + route[2])
+        
+        sys.exit(0)
 
-    print("Select target: ", end ="")
-    selection = int(input())
+    elif selection == "T":
+        print("--- Possible targets ---")
+        for i in range(len(targets)):
+            print(str(i) + " - " + targets[i])
 
-    print("Your selection: " + targets[selection])
+        selection = int(-1)
+        while selection > i or selection < 0:
+            print("Select target: ", end ="")
+            try:
+                selection = int(input())
+            except Exception as e:
+                sys.exit(e)
 
-    for route in routes:
-        if targets[selection] == route[2]:
-            print(route[0] + "\t>\t" + route[1] + "\t>\t" + route[2])
+        print("Your selection: " + targets[selection])
+
+        for route in routes:
+            if targets[selection] == route[2]:
+                print(route[0] + "\t>\t" + route[1] + "\t>\t" + route[2])
+
+        sys.exit(0)
