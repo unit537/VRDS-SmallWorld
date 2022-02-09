@@ -176,13 +176,21 @@ def findRoutes():
             continue
         else:
             starter = card
-            starters.append(starter.name)
             bridges = findBridges(starter, deck)
             for bridge in bridges:
                 targets = findBridges(bridge, deck)
                 for target in targets:
                     if target.id != starter.id:
                         routes.append((starter.name, bridge.name, target.name))
+    
+    if len(routes) <= 0:
+        print("Your deck has no possible Small World routes!")
+        sys.exit(0)
+
+def findStarters():
+    for route in routes:
+        if route[0] not in starters:
+            starters.append(route[0])
 
 def findTargets():
     for route in routes:
@@ -195,6 +203,7 @@ findLongestCardNameInDeck()
 formatCardNamesInDeck()
 starter = deck[0]
 findRoutes()
+findStarters()
 findTargets()
 
 # Begin user prompts
@@ -215,7 +224,7 @@ while selection != "S" or selection != "T":
             selection = int(input())
 
         print("Your selection: " + targets[selection])
-        
+
         for route in routes:
             if starters[selection] == route[0]:
                 print(route[0] + "\t>\t" + route[1] + "\t>\t" + route[2])
